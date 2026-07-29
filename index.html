@@ -253,6 +253,46 @@
     height: auto;
   }
 
+  #eqPanel {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    background: rgba(20,20,20,0.85);
+    border: 1px solid #333;
+    border-left: 3px solid #e8311d;
+    border-radius: 10px;
+    padding: 10px 14px;
+    pointer-events: none;
+  }
+
+  #eqBars {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 90px;
+  }
+
+  .eqBar {
+    width: 8px;
+    min-height: 3px;
+    border-radius: 2px 2px 0 0;
+    background: #39ff88;
+    transition: height 0.06s linear, background 0.06s linear;
+  }
+
+  #eqLabel {
+    font-family: -apple-system, "Helvetica Neue", sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  #eqLabel .deg { color: #ffd339; }
+
   #hud button {
     pointer-events: auto;
     cursor: pointer;
@@ -416,6 +456,11 @@
     <button id="haloOffsetReset">Reset</button>
     <button id="haloCenterClose">Close</button>
   </div>
+</div>
+
+<div id="eqPanel">
+  <div id="eqBars"></div>
+  <div id="eqLabel"><span class="deg">0.0°</span></div>
 </div>
 
 <div id="hint">Place all 3 puck contacts down together. Individual touches not matching the puck pattern show as grey crosshairs.</div>
@@ -631,6 +676,48 @@
     haloCenterPanel.classList.contains('visible') ? closeHaloCenterPanel() : openHaloCenterPanel();
   });
   haloCenterClose.addEventListener('click', closeHaloCenterPanel);
+
+  // ---------------------------------------------------------------
+  // Rotation EQ meter — visualizes the puck's 0-360° angle as a
+  // classic equalizer-style bar display. Level (bar height) rises
+  // as the angle increases from 0° toward 360°, resetting on wrap.
+  // ---------------------------------------------------------------
+  const EQ_BAR_COUNT = 14;
+  const EQ_MIN_H = 3;
+  const EQ_MAX_H = 90;
+  const eqBarsContainer = document.getElementById('eqBars');
+  const eqLabel = document.getElementById('eqLabel');
+  const eqBarEls = [];
+  const eqWeights = [];
+
+  for (let i = 0; i < EQ_BAR_COUNT; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'eqBar';
+    bar.style.height = EQ_MIN_H + 'px';
+    eqBarsContainer.appendChild(bar);
+    eqBarEls.push(bar);
+    // Smooth hump shape so the meter looks like a real spectrum
+    // display rather than a single flat bar, at any level.
+    eqWeights.push(0.35 + 0.65 * Math.sin(Math.PI * (i / (EQ_BAR_COUNT - 1))));
+  }
+
+  function updateEQ(angleDegOrNull) {
+    const levelFrac = angleDegOrNull === null ? 0 : angleDegOrNull / 360;
+
+    for (let i = 0; i < EQ_BAR_COUNT; i++) {
+      const h = EQ_MIN_H + (EQ_MAX_H - EQ_MIN_H) * levelFrac * eqWeights[i];
+      eqBarEls[i].style.height = h.toFixed(1) + 'px';
+      // Green (low) -> yellow -> red (high), like a classic level meter
+      const hue = 140 - 140 * levelFrac;
+      eqBarEls[i].style.background = `hsl(${hue}, 90%, 55%)`;
+    }
+
+    eqLabel.innerHTML = angleDegOrNull === null
+      ? `<span class="deg">--°</span>`
+      : `<span class="deg">${angleDegOrNull.toFixed(1)}°</span>`;
+  }
+
+  updateEQ(null);
 
   function isUITouch(target) {
     return hud.contains(target) || calibrateOverlay.contains(target) ||
@@ -938,6 +1025,7 @@
       debugEl.textContent = '';
 
       lastPuckFrame = { centroidX, centroidY, angleRad };
+      updateEQ(angleDeg);
 
       if (haloEnabled) {
         const h = ensureHaloEl();
@@ -951,6 +1039,7 @@
       showPuckElements(false);
       puckStatusEl.textContent = 'not detected';
       puckStatusEl.className = 'status none';
+      updateEQ(null);
 
       if (haloEl) haloEl.style.display = 'none';
 

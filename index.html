@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Puck Triangle Tracker</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #0a0a0a;
+    overflow: hidden;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  #stage {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  svg#puckSvg {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  .line {
+    position: absolute;
+    pointer-events: none;
+  }
+  .line-h { height: 2px; width: 100%; left: 0; }
+  .line-v { width: 2px; height: 100%; top: 0; }
+
+  .dot {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    margin-left: -10px;
+    margin-top: -10px;
+    border-radius: 50%;
+    pointer-events: none;
+  }
+
+  .label {
+    position: absolute;
+    font-family: -apple-system, "Helvetica Neue", sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    pointer-events: none;
+    white-space: nowrap;
+    text-shadow: 0 0 4px #000;
+  }
+
+  .puckLabel {
+    position: absolute;
+    color: #39ff88;
+    font-family: -apple-system, "Helvetica Neue", sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    pointer-events: none;
+    white-space: nowrap;
+    text-shadow: 0 0 4px #000, 0 0 8px #000;
+  }
+
+  #hud {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    max-width: calc(100% - 24px);
+    color: #ffffff;
+    font-family: -apple-system, "Helvetica Neue", sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    background: rgba(255,255,255,0.06);
+    padding: 10px 14px;
+    border-radius: 10px;
+    border-left: 3px solid #e8311d;
+    touch-action: manipulation;
+  }
+
+  #hud * {
+    touch-action: manipulation;
+  }
+
+  #hud .status {
+    font-weight: 700;
+  }
+
+  #hud .status.detected { color: #39ff88; }
+  #hud .status.none { color: #888; }
+
+  #hud button {
+    pointer-events: auto;
+    cursor: pointer;
+    background: rgba(255,255,255,0.1);
+    color: #ccc;
+    font-family: -apple-system, "Helvetica Neue", sans-serif;
+    font-size: 12px;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 10px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(10,10,10,0.96);
+    z-index: 100;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, "Helvetica Neue", sans-serif;
+    color: #fff;
+    text-align: center;
+    padding: 24px;
+    box-sizing: border-box;
+    touch-action: manipulation;
+  }
+
+  .overlay * {
+    touch-action: manipulation;
+  }
+
+  .overlay.visible { display: flex; }
+
+  .overlay h2 { margin: 0 0 8px; font-size: 18px; }
+
+  .overlay p {
+    margin: 0 0 20px;
+    color: #aaa;
+    font-size: 13px;
+    max-width: 360px;
+    line-height: 1.5;
+  }
+
+  .overlay label {
+    display: block;
+    font-size: 12px;
+    color: #aaa;
+    margin-bottom: 4px;
+    text-align: left;
+  }
+
+  .overlay .field {
+    margin-bottom: 14px;
+    width: 200px;
+  }
+
+  .overlay input {
+    font-size: 16px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #444;
+    background: #1a1a1a;
+    color: #fff;
+    width: 100%;
+    box-sizing: border-box;
+    text-align: center;
+  }
+
+  .overlay button.action {
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 18px;
+    border-radius: 8px;
+    border: none;
+    margin: 6px;
+    pointer-events: auto;
+  }
+
+  .btn-save { background: #39ff88; color: #0a0a0a; }
+  .btn-cancel { background: #3a3a3a; color: #fff; }
+
+  #rulerLine {
+    height: 4px;
+    background: #39ff88;
+    box-shadow: 0 0 8px #39ff88;
+    margin-bottom: 6px;
+  }
+  .rulerCaps { display: flex; justify-content: space-between; width: 100%; }
+  .rulerTick { width: 2px; height: 14px; background: #39ff88; }
+  #rulerWrap { margin-bottom: 24px; }
+
+  .overlayStatus {
+    margin-top: 14px;
+    font-size: 12px;
+    color: #39ff88;
+    min-height: 16px;
+  }
+
+  #hint {
+    position: fixed;
+    bottom: 34px;
+    left: 12px;
+    right: 12px;
+    color: #777;
+    font-family: -apple-system, "Helvetica Neue", sans-serif;
+    font-size: 12px;
+    text-align: center;
+    pointer-events: none;
+  }
+
+  #debug {
+    position: fixed;
+    bottom: 12px;
+    left: 12px;
+    right: 12px;
+    color: #ffd339;
+    font-family: -apple-system, "Helvetica Neue", sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    pointer-events: none;
+    min-height: 16px;
+  }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div>Touches: <span id="touchCount">0</span></div>
+  <div>Puck: <span class="status none" id="puckStatus">not detected</span></div>
+  <button id="calibrateBtn">Calibrate (c)</button>
+  <button id="geometryBtn">Puck geometry (p)</button>
+</div>
+
+<div id="hint">Place all 3 puck contacts down together. Individual touches not matching the puck pattern show as grey crosshairs.</div>
+<div id="debug"></div>
+
+<div id="stage"></div>
+<svg id="puckSvg"></svg>
+
+<div class="overlay" id="calibrateOverlay">
+  <h2>Calibrate screen scale</h2>
+  <p>Place a real ruler against the line below and measure it in millimeters, then enter the actual measured length. This lets the tracker compare touch spacing to your puck's real dimensions.</p>
+  <div id="rulerWrap">
+    <div id="rulerLine" style="width: 300px;"></div>
+    <div class="rulerCaps" style="width: 300px;">
+      <div class="rulerTick"></div>
+      <div class="rulerTick"></div>
+    </div>
+  </div>
+  <div class="field">
+    <label for="measuredMm">Measured length (mm)</label>
+    <input type="number" inputmode="decimal" id="measuredMm" placeholder="e.g. 79.4" />
+  </div>
+  <div>
+    <button class="action btn-save" id="calibrateSave">Save</button>
+    <button class="action btn-cancel" id="calibrateCancel">Cancel</button>
+  </div>
+  <div class="overlayStatus" id="calibrateStatus"></div>
+</div>
+
+<div class="overlay" id="geometryOverlay">
+  <h2>Puck triangle geometry</h2>
+  <p>Enter your puck's real isosceles triangle dimensions and how much variation to tolerate. The tracker looks for 3 touches whose spacing matches this pattern.</p>
+  <div class="field">
+    <label for="legLength">Leg length (mm) — the two equal sides</label>
+    <input type="number" inputmode="decimal" id="legLength" />
+  </div>
+  <div class="field">
+    <label for="baseLength">Base length (mm) — the third, differing side</label>
+    <input type="number" inputmode="decimal" id="baseLength" />
+  </div>
+  <div class="field">
+    <label for="tolerancePct">Match tolerance (%)</label>
+    <input type="number" inputmode="decimal" id="tolerancePct" />
+  </div>
+  <div>
+    <button class="action btn-save" id="geometrySave">Save</button>
+    <button class="action btn-cancel" id="geometryCancel">Cancel</button>
+  </div>
+  <div class="overlayStatus" id="geometryStatus"></div>
+</div>
+
+<script>
+  const FALLBACK_PX_PER_MM = 96 / 25.4;
+  let pxPerMm = parseFloat(localStorage.getItem('puckVis_pxPerMm')) || FALLBACK_PX_PER_MM;
+
+  let legLengthMm = parseFloat(localStorage.getItem('puckVis_legLength')) || 40;
+  let baseLengthMm = parseFloat(localStorage.getItem('puckVis_baseLength')) || 25;
+  let tolerancePct = parseFloat(localStorage.getItem('puckVis_tolerance')) || 20;
+
+  const stage = document.getElementById('stage');
+  const svg = document.getElementById('puckSvg');
+  const touchCountEl = document.getElementById('touchCount');
+  const puckStatusEl = document.getElementById('puckStatus');
+  const debugEl = document.getElementById('debug');
+  const hud = document.getElementById('hud');
+
+  const calibrateBtn = document.getElementById('calibrateBtn');
+  const calibrateOverlay = document.getElementById('calibrateOverlay');
+  const measuredMmInput = document.getElementById('measuredMm');
+  const calibrateSave = document.getElementById('calibrateSave');
+  const calibrateCancel = document.getElementById('calibrateCancel');
+  const calibrateStatus = document.getElementById('calibrateStatus');
+  const RULER_PX = 300;
+
+  const geometryBtn = document.getElementById('geometryBtn');
+  const geometryOverlay = document.getElementById('geometryOverlay');
+  const legLengthInput = document.getElementById('legLength');
+  const baseLengthInput = document.getElementById('baseLength');
+  const toleranceInput = document.getElementById('tolerancePct');
+  const geometrySave = document.getElementById('geometrySave');
+  const geometryCancel = document.getElementById('geometryCancel');
+  const geometryStatus = document.getElementById('geometryStatus');
+
+  function isUITouch(target) {
+    return hud.contains(target) || calibrateOverlay.contains(target) || geometryOverlay.contains(target);
+  }
+
+  calibrateBtn.addEventListener('click', openCalibrate);
+  function openCalibrate() {
+    calibrateStatus.textContent = '';
+    measuredMmInput.value = '';
+    calibrateOverlay.classList.add('visible');
+  }
+  calibrateCancel.addEventListener('click', () => calibrateOverlay.classList.remove('visible'));
+  calibrateSave.addEventListener('click', () => {
+    const mm = parseFloat(measuredMmInput.value);
+    if (!mm || mm <= 0) {
+      calibrateStatus.textContent = 'Enter the measured length in mm first.';
+      return;
+    }
+    pxPerMm = RULER_PX / mm;
+    localStorage.setItem('puckVis_pxPerMm', pxPerMm);
+    calibrateStatus.textContent = `Saved: ${pxPerMm.toFixed(3)} px/mm`;
+    setTimeout(() => calibrateOverlay.classList.remove('visible'), 700);
+  });
+  document.getElementById('rulerLine').style.width = RULER_PX + 'px';
+  document.querySelector('.rulerCaps').style.width = RULER_PX + 'px';
+
+  geometryBtn.addEventListener('click', openGeometry);
+  function openGeometry() {
+    geometryStatus.textContent = '';
+    legLengthInput.value = legLengthMm;
+    baseLengthInput.value = baseLengthMm;
+    toleranceInput.value = tolerancePct;
+    geometryOverlay.classList.add('visible');
+  }
+  geometryCancel.addEventListener('click', () => geometryOverlay.classList.remove('visible'));
+  geometrySave.addEventListener('click', () => {
+    const leg = parseFloat(legLengthInput.value);
+    const base = parseFloat(baseLengthInput.value);
+    const tol = parseFloat(toleranceInput.value);
+    if (!leg || !base || isNaN(tol) || leg <= 0 || base <= 0 || tol < 0) {
+      geometryStatus.textContent = 'Enter valid positive numbers for all fields.';
+      return;
+    }
+    legLengthMm = leg;
+    baseLengthMm = base;
+    tolerancePct = tol;
+    localStorage.setItem('puckVis_legLength', legLengthMm);
+    localStorage.setItem('puckVis_baseLength', baseLengthMm);
+    localStorage.setItem('puckVis_tolerance', tolerancePct);
+    geometryStatus.textContent = `Saved: legs ${legLengthMm}mm, base ${baseLengthMm}mm, tol ${tolerancePct}%`;
+    setTimeout(() => geometryOverlay.classList.remove('visible'), 700);
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'c' || e.key === 'C') {
+      calibrateOverlay.classList.contains('visible')
+        ? calibrateOverlay.classList.remove('visible')
+        : openCalibrate();
+    }
+    if (e.key === 'p' || e.key === 'P') {
+      geometryOverlay.classList.contains('visible')
+        ? geometryOverlay.classList.remove('visible')
+        : openGeometry();
+    }
+  });
+
+  const touchVisuals = new Map();
+
+  const touchColors = ['#39ff88', '#39c8ff', '#ffd339', '#ff5c8a', '#c39fff', '#ff9d39'];
+  function colorForTouch(identifier) {
+    return touchColors[Math.abs(identifier) % touchColors.length];
+  }
+
+  function createTouchVisual(identifier) {
+    const color = colorForTouch(identifier);
+    const h = document.createElement('div'); h.className = 'line line-h';
+    const v = document.createElement('div'); v.className = 'line line-v';
+    const dot = document.createElement('div'); dot.className = 'dot';
+    const label = document.createElement('div'); label.className = 'label';
+
+    h.style.background = color;
+    h.style.boxShadow = `0 0 8px ${color}, 0 0 16px ${color}aa`;
+    v.style.background = color;
+    v.style.boxShadow = `0 0 8px ${color}, 0 0 16px ${color}aa`;
+    dot.style.border = `2px solid ${color}`;
+    dot.style.background = color + '33';
+    label.style.color = color;
+
+    stage.appendChild(h); stage.appendChild(v); stage.appendChild(dot); stage.appendChild(label);
+    return { h, v, dot, label };
+  }
+
+  function updateTouchVisual(visual, x, y, identifier) {
+    visual.h.style.top = y + 'px';
+    visual.v.style.left = x + 'px';
+    visual.dot.style.left = x + 'px';
+    visual.dot.style.top = y + 'px';
+    visual.label.style.left = (x + 16) + 'px';
+    visual.label.style.top = (y - 20) + 'px';
+    visual.label.textContent = `#${identifier}  x:${Math.round(x)}  y:${Math.round(y)}`;
+  }
+
+  function removeTouchVisual(visual) {
+    visual.h.remove(); visual.v.remove(); visual.dot.remove(); visual.label.remove();
+  }
+
+  let puckElements = null;
+
+  function ensurePuckElements() {
+    if (puckElements) return puckElements;
+    const ns = 'http://www.w3.org/2000/svg';
+    const legLine1 = document.createElementNS(ns, 'line');
+    const legLine2 = document.createElementNS(ns, 'line');
+    const baseLine = document.createElementNS(ns, 'line');
+    const arrowLine = document.createElementNS(ns, 'line');
+    const apexDot = document.createElementNS(ns, 'circle');
+    const centroidDot = document.createElementNS(ns, 'circle');
+
+    legLine1.setAttribute('stroke', '#39ff88');
+    legLine2.setAttribute('stroke', '#39ff88');
+    legLine1.setAttribute('stroke-width', '2');
+    legLine2.setAttribute('stroke-width', '2');
+
+    baseLine.setAttribute('stroke', '#39c8ff');
+    baseLine.setAttribute('stroke-width', '2');
+
+    arrowLine.setAttribute('stroke', '#ff5c8a');
+    arrowLine.setAttribute('stroke-width', '3');
+
+    apexDot.setAttribute('r', '7');
+    apexDot.setAttribute('fill', '#ff5c8a');
+
+    centroidDot.setAttribute('r', '6');
+    centroidDot.setAttribute('fill', '#39ff88');
+    centroidDot.setAttribute('fill-opacity', '0.9');
+
+    svg.appendChild(legLine1);
+    svg.appendChild(legLine2);
+    svg.appendChild(baseLine);
+    svg.appendChild(arrowLine);
+    svg.appendChild(apexDot);
+    svg.appendChild(centroidDot);
+
+    const label = document.createElement('div');
+    label.className = 'puckLabel';
+    document.body.appendChild(label);
+
+    puckElements = { legLine1, legLine2, baseLine, arrowLine, apexDot, centroidDot, label };
+    return puckElements;
+  }
+
+  function showPuckElements(show) {
+    if (!puckElements) return;
+    const display = show ? '' : 'none';
+    for (const key of ['legLine1', 'legLine2', 'baseLine', 'arrowLine', 'apexDot', 'centroidDot']) {
+      puckElements[key].style.display = display;
+    }
+    puckElements.label.style.display = show ? '' : 'none';
+  }
+
+  function dist(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  }
+
+  function combinations3(arr) {
+    const out = [];
+    for (let i = 0; i < arr.length; i++) {
+      for (let j = i + 1; j < arr.length; j++) {
+        for (let k = j + 1; k < arr.length; k++) {
+          out.push([arr[i], arr[j], arr[k]]);
+        }
+      }
+    }
+    return out;
+  }
+
+  function findBestPuckMatch(touches) {
+    if (touches.length < 3) return { match: null, closest: null };
+
+    const expectedSorted = [legLengthMm, legLengthMm, baseLengthMm].sort((a, b) => a - b);
+    const tol = tolerancePct / 100;
+
+    let best = null;
+    let closest = null; // best combo regardless of tolerance pass/fail, for debugging
+
+    for (const combo of combinations3(touches)) {
+      const [A, B, C] = combo;
+      const dAB = dist(A, B) / pxPerMm;
+      const dBC = dist(B, C) / pxPerMm;
+      const dCA = dist(C, A) / pxPerMm;
+
+      const sides = [
+        { len: dAB, pair: [A, B], other: C },
+        { len: dBC, pair: [B, C], other: A },
+        { len: dCA, pair: [C, A], other: B },
+      ];
+
+      const sortedLens = sides.map(s => s.len).slice().sort((a, b) => a - b);
+
+      let deviation = 0;
+      let matches = true;
+      for (let i = 0; i < 3; i++) {
+        const expected = expectedSorted[i];
+        const actual = sortedLens[i];
+        const allowed = expected * tol;
+        const diff = Math.abs(actual - expected);
+        if (diff > allowed) matches = false;
+        deviation += diff;
+      }
+
+      if (!closest || deviation < closest.deviation) {
+        closest = { sortedLens, deviation };
+      }
+
+      if (!matches) continue;
+
+      let baseSide = sides[0];
+      let bestBaseDiff = Math.abs(sides[0].len - baseLengthMm);
+      for (const s of sides) {
+        const d = Math.abs(s.len - baseLengthMm);
+        if (d < bestBaseDiff) { bestBaseDiff = d; baseSide = s; }
+      }
+
+      const candidate = {
+        points: [A, B, C],
+        baseA: baseSide.pair[0],
+        baseB: baseSide.pair[1],
+        apex: baseSide.other,
+        score: deviation,
+      };
+
+      if (!best || candidate.score < best.score) best = candidate;
+    }
+
+    return { match: best, closest };
+  }
+
+
+  function updateFromTouches(touchList) {
+    const touches = [];
+    for (const t of touchList) {
+      if (isUITouch(t.target)) continue;
+      touches.push({ id: t.identifier, x: t.clientX, y: t.clientY });
+    }
+
+    touchCountEl.textContent = touches.length;
+
+    const result = findBestPuckMatch(touches);
+    const match = result.match;
+    const usedIds = new Set();
+
+    if (match) {
+      for (const p of match.points) usedIds.add(p.id);
+
+      const els = ensurePuckElements();
+      showPuckElements(true);
+
+      const { baseA, baseB, apex } = match;
+      const centroidX = (match.points[0].x + match.points[1].x + match.points[2].x) / 3;
+      const centroidY = (match.points[0].y + match.points[1].y + match.points[2].y) / 3;
+
+      els.baseLine.setAttribute('x1', baseA.x); els.baseLine.setAttribute('y1', baseA.y);
+      els.baseLine.setAttribute('x2', baseB.x); els.baseLine.setAttribute('y2', baseB.y);
+
+      els.legLine1.setAttribute('x1', baseA.x); els.legLine1.setAttribute('y1', baseA.y);
+      els.legLine1.setAttribute('x2', apex.x);  els.legLine1.setAttribute('y2', apex.y);
+
+      els.legLine2.setAttribute('x1', baseB.x); els.legLine2.setAttribute('y1', baseB.y);
+      els.legLine2.setAttribute('x2', apex.x);  els.legLine2.setAttribute('y2', apex.y);
+
+      els.apexDot.setAttribute('cx', apex.x); els.apexDot.setAttribute('cy', apex.y);
+      els.centroidDot.setAttribute('cx', centroidX); els.centroidDot.setAttribute('cy', centroidY);
+
+      const baseMidX = (baseA.x + baseB.x) / 2;
+      const baseMidY = (baseA.y + baseB.y) / 2;
+      const angleRad = Math.atan2(apex.y - baseMidY, apex.x - baseMidX);
+      const angleDeg = (angleRad * 180 / Math.PI + 360) % 360;
+
+      els.arrowLine.setAttribute('x1', centroidX);
+      els.arrowLine.setAttribute('y1', centroidY);
+      els.arrowLine.setAttribute('x2', centroidX + Math.cos(angleRad) * 40);
+      els.arrowLine.setAttribute('y2', centroidY + Math.sin(angleRad) * 40);
+
+      els.label.style.left = (centroidX + 16) + 'px';
+      els.label.style.top = (centroidY - 46) + 'px';
+      els.label.textContent =
+        `PUCK  x:${Math.round(centroidX)} y:${Math.round(centroidY)}  ${angleDeg.toFixed(1)}°`;
+
+      puckStatusEl.textContent = `detected (${angleDeg.toFixed(1)}°)`;
+      puckStatusEl.className = 'status detected';
+      debugEl.textContent = '';
+    } else {
+      showPuckElements(false);
+      puckStatusEl.textContent = 'not detected';
+      puckStatusEl.className = 'status none';
+
+      if (result.closest) {
+        const [s1, s2, s3] = result.closest.sortedLens.map(v => v.toFixed(1));
+        const expectedSorted = [legLengthMm, legLengthMm, baseLengthMm].sort((a, b) => a - b);
+        debugEl.textContent =
+          `Closest 3 touches measured: ${s1}, ${s2}, ${s3} mm ` +
+          `(target: ${expectedSorted[0]}, ${expectedSorted[1]}, ${expectedSorted[2]} mm ±${tolerancePct}%)`;
+      } else {
+        debugEl.textContent = touches.length === 0
+          ? 'No touches detected at all — check that touches are reaching this page.'
+          : `Only ${touches.length} touch(es) active — need 3 for puck detection.`;
+      }
+    }
+
+    const seenTouches = new Set();
+    for (const t of touches) {
+      seenTouches.add(t.id);
+      let visual = touchVisuals.get(t.id);
+      if (!visual) {
+        visual = createTouchVisual(t.id);
+        touchVisuals.set(t.id, visual);
+      }
+      updateTouchVisual(visual, t.x, t.y, t.id);
+    }
+    for (const [id, visual] of touchVisuals) {
+      if (!seenTouches.has(id)) {
+        removeTouchVisual(visual);
+        touchVisuals.delete(id);
+      }
+    }
+  }
+
+  function handleTouchMove(e) {
+    let hasSurfaceTouch = false;
+    for (const t of e.touches) if (!isUITouch(t.target)) hasSurfaceTouch = true;
+    if (hasSurfaceTouch) e.preventDefault();
+    updateFromTouches(e.touches);
+  }
+
+  function handleTouchEnd(e) {
+    let hasSurfaceTouch = false;
+    for (const t of e.touches) if (!isUITouch(t.target)) hasSurfaceTouch = true;
+    if (hasSurfaceTouch) e.preventDefault();
+    updateFromTouches(e.touches);
+  }
+
+  document.addEventListener('touchstart', handleTouchMove, { passive: false });
+  document.addEventListener('touchmove', handleTouchMove, { passive: false });
+  document.addEventListener('touchend', handleTouchEnd, { passive: false });
+  document.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+</script>
+
+</body>
+</html>

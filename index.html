@@ -988,15 +988,19 @@
   }
 
   function handleTouchMove(e) {
+    // Only block default (scroll/zoom) if the touch(es) that triggered THIS
+    // event are on the surface — not just because some other touch (e.g. the
+    // puck, already down) happens to also be active. Otherwise iOS won't
+    // fire click on a button tapped while the puck is sitting on the glass.
     let hasSurfaceTouch = false;
-    for (const t of e.touches) if (!isUITouch(t.target)) hasSurfaceTouch = true;
+    for (const t of e.changedTouches) if (!isUITouch(t.target)) hasSurfaceTouch = true;
     if (hasSurfaceTouch) e.preventDefault();
     updateFromTouches(e.touches);
   }
 
   function handleTouchEnd(e) {
     let hasSurfaceTouch = false;
-    for (const t of e.touches) if (!isUITouch(t.target)) hasSurfaceTouch = true;
+    for (const t of e.changedTouches) if (!isUITouch(t.target)) hasSurfaceTouch = true;
     if (hasSurfaceTouch) e.preventDefault();
     updateFromTouches(e.touches);
   }

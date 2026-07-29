@@ -104,6 +104,27 @@
   #hud .status.detected { color: #39ff88; }
   #hud .status.none { color: #888; }
 
+  #puckDots {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .puckDot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #333;
+    border: 1px solid #444;
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .puckDot.lit {
+    background: #39ff88;
+    border-color: #39ff88;
+    box-shadow: 0 0 6px #39ff88, 0 0 12px #39ff8899;
+  }
+
   .toggleSwitch {
     display: flex;
     align-items: center;
@@ -277,11 +298,11 @@
   }
 
   .eqBar {
-    width: 8px;
+    width: 16px;
     min-height: 3px;
-    border-radius: 2px 2px 0 0;
+    border-radius: 3px 3px 0 0;
     background: #39ff88;
-    transition: height 0.06s linear, background 0.06s linear;
+    transition: height 0.18s ease-out, background 0.18s ease-out;
   }
 
   #eqLabel {
@@ -429,6 +450,7 @@
 <div id="hud">
   <div>Touches: <span id="touchCount">0</span></div>
   <div>Puck: <span class="status none" id="puckStatus">not detected</span></div>
+  <div id="puckDots"></div>
   <div id="crosshairToggle" class="toggleSwitch on">
     <div class="switch"></div>
     <div class="switchLabel">Crosshairs (H)</div>
@@ -568,13 +590,18 @@
     haloEl.style.setProperty('--halo-max-px', max);
   }
 
-  let haloEl = null;
-  function ensureHaloEl() {
-    if (haloEl) return haloEl;
-    haloEl = document.createElement('div');
-    haloEl.className = 'halo';
-    document.body.appendChild(haloEl);
-    return haloEl;
+  const haloEls = new Map(); // puckId -> halo div
+  function ensureHaloEl(puckId) {
+    if (haloEls.has(puckId)) return haloEls.get(puckId);
+    const el = document.createElement('div');
+    el.className = 'halo';
+    document.body.appendChild(el);
+    haloEls.set(puckId, el);
+    return el;
+  }
+  function removeHaloEl(puckId) {
+    const el = haloEls.get(puckId);
+    if (el) { el.remove(); haloEls.delete(puckId); }
   }
 
   function setCrosshairsEnabled(enabled) {
@@ -678,39 +705,26 @@
   haloCenterClose.addEventListener('click', closeHaloCenterPanel);
 
   // ---------------------------------------------------------------
-  // Rotation EQ meter — visualizes the puck's 0-360° angle as a
-  // classic equalizer-style bar display. Level (bar height) rises
-  // as the angle increases from 0° toward 360°, resetting on wrap.
+  // Rotation meter — a single bar whose height animates smoothly up
+  // and down as the puck's angle increases from 0° toward 360°,
+  // resetting low again as it wraps past 360° back to 0°.
   // ---------------------------------------------------------------
-  const EQ_BAR_COUNT = 14;
   const EQ_MIN_H = 3;
   const EQ_MAX_H = 90;
   const eqBarsContainer = document.getElementById('eqBars');
   const eqLabel = document.getElementById('eqLabel');
-  const eqBarEls = [];
-  const eqWeights = [];
-
-  for (let i = 0; i < EQ_BAR_COUNT; i++) {
-    const bar = document.createElement('div');
-    bar.className = 'eqBar';
-    bar.style.height = EQ_MIN_H + 'px';
-    eqBarsContainer.appendChild(bar);
-    eqBarEls.push(bar);
-    // Smooth hump shape so the meter looks like a real spectrum
-    // display rather than a single flat bar, at any level.
-    eqWeights.push(0.35 + 0.65 * Math.sin(Math.PI * (i / (EQ_BAR_COUNT - 1))));
-  }
+  const eqBarEl = document.createElement('div');
+  eqBarEl.className = 'eqBar';
+  eqBarEl.style.height = EQ_MIN_H + 'px';
+  eqBarsContainer.appendChild(eqBarEl);
 
   function updateEQ(angleDegOrNull) {
     const levelFrac = angleDegOrNull === null ? 0 : angleDegOrNull / 360;
-
-    for (let i = 0; i < EQ_BAR_COUNT; i++) {
-      const h = EQ_MIN_H + (EQ_MAX_H - EQ_MIN_H) * levelFrac * eqWeights[i];
-      eqBarEls[i].style.height = h.toFixed(1) + 'px';
-      // Green (low) -> yellow -> red (high), like a classic level meter
-      const hue = 140 - 140 * levelFrac;
-      eqBarEls[i].style.background = `hsl(${hue}, 90%, 55%)`;
-    }
+    const h = EQ_MIN_H + (EQ_MAX_H - EQ_MIN_H) * levelFrac;
+    eqBarEl.style.height = h.toFixed(1) + 'px';
+    // Green (low) -> yellow -> red (high), like a classic level meter
+    const hue = 140 - 140 * levelFrac;
+    eqBarEl.style.background = `hsl(${hue}, 90%, 55%)`;
 
     eqLabel.innerHTML = angleDegOrNull === null
       ? `<span class="deg">--°</span>`
@@ -718,6 +732,28 @@
   }
 
   updateEQ(null);
+
+  // ---------------------------------------------------------------
+  // Puck-count indicator — a simple row of lights, one per puck
+  // slot, that fill in as pucks become active (independent of the
+  // specific IDs assigned, since IDs can churn as pucks are lifted
+  // and replaced). Sized generously in case more than 2 are used.
+  // ---------------------------------------------------------------
+  const PUCK_DOT_COUNT = 4;
+  const puckDotsContainer = document.getElementById('puckDots');
+  const puckDotEls = [];
+  for (let i = 0; i < PUCK_DOT_COUNT; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'puckDot';
+    puckDotsContainer.appendChild(dot);
+    puckDotEls.push(dot);
+  }
+  function updatePuckDots(activeCount) {
+    for (let i = 0; i < PUCK_DOT_COUNT; i++) {
+      puckDotEls[i].classList.toggle('lit', i < activeCount);
+    }
+  }
+  updatePuckDots(0);
 
   function isUITouch(target) {
     return hud.contains(target) || calibrateOverlay.contains(target) ||
@@ -831,10 +867,10 @@
     visual.h.remove(); visual.v.remove(); visual.dot.remove(); visual.label.remove();
   }
 
-  let puckElements = null;
+  const puckElementsById = new Map(); // puckId -> {legLine1, legLine2, baseLine, arrowLine, apexDot, centroidDot, label}
 
-  function ensurePuckElements() {
-    if (puckElements) return puckElements;
+  function ensurePuckElements(puckId) {
+    if (puckElementsById.has(puckId)) return puckElementsById.get(puckId);
     const ns = 'http://www.w3.org/2000/svg';
     const legLine1 = document.createElementNS(ns, 'line');
     const legLine2 = document.createElementNS(ns, 'line');
@@ -872,17 +908,19 @@
     label.className = 'puckLabel';
     document.body.appendChild(label);
 
-    puckElements = { legLine1, legLine2, baseLine, arrowLine, apexDot, centroidDot, label };
-    return puckElements;
+    const els = { legLine1, legLine2, baseLine, arrowLine, apexDot, centroidDot, label };
+    puckElementsById.set(puckId, els);
+    return els;
   }
 
-  function showPuckElements(show) {
-    if (!puckElements) return;
-    const display = show ? '' : 'none';
+  function removePuckElements(puckId) {
+    const els = puckElementsById.get(puckId);
+    if (!els) return;
     for (const key of ['legLine1', 'legLine2', 'baseLine', 'arrowLine', 'apexDot', 'centroidDot']) {
-      puckElements[key].style.display = display;
+      els[key].remove();
     }
-    puckElements.label.style.display = show ? '' : 'none';
+    els.label.remove();
+    puckElementsById.delete(puckId);
   }
 
   function dist(a, b) {
@@ -901,14 +939,17 @@
     return out;
   }
 
-  function findBestPuckMatch(touches) {
+  // Finds the single best-matching triple within a pool of touches.
+  // Used both standalone (for debug info) and repeatedly to peel off
+  // multiple non-overlapping pucks from a larger touch set.
+  function findBestPuckMatchIn(touches) {
     if (touches.length < 3) return { match: null, closest: null };
 
     const expectedSorted = [legLengthMm, legLengthMm, baseLengthMm].sort((a, b) => a - b);
     const tol = tolerancePct / 100;
 
     let best = null;
-    let closest = null; // best combo regardless of tolerance pass/fail, for debugging
+    let closest = null;
 
     for (const combo of combinations3(touches)) {
       const [A, B, C] = combo;
@@ -962,6 +1003,40 @@
     return { match: best, closest };
   }
 
+  // Repeatedly extracts the best matching triple, removes its 3 touches
+  // from the pool, and repeats — so multiple pucks on screen at once
+  // are each found as separate, non-overlapping matches.
+  function findAllPuckMatches(touches) {
+    const matches = [];
+    let remaining = touches.slice();
+    let closestOverall = null;
+
+    while (remaining.length >= 3) {
+      const { match, closest } = findBestPuckMatchIn(remaining);
+      if (!closestOverall && closest) closestOverall = closest;
+      if (!match) break;
+      matches.push(match);
+      const usedIds = new Set(match.points.map(p => p.id));
+      remaining = remaining.filter(t => !usedIds.has(t.id));
+    }
+
+    return { matches, closest: closestOverall };
+  }
+
+
+  // Persistent puck tracking state: each entry keeps the puck's last
+  // known centroid/angle so the SAME physical puck keeps the SAME id
+  // as it moves, rather than getting a new id every single frame.
+  const trackedPucks = new Map(); // id -> { centroidX, centroidY, angleRad }
+  let nextPuckId = 1;
+
+  // How far (in mm) a puck's centroid can move between frames and still
+  // be considered "the same puck" rather than a new one. Generous enough
+  // for normal movement, but should stay well under the distance between
+  // two distinct pucks placed on the table at once.
+  function associationThresholdMm() {
+    return Math.max(legLengthMm, baseLengthMm) * 1.2;
+  }
 
   function updateFromTouches(touchList) {
     const touches = [];
@@ -972,19 +1047,75 @@
 
     touchCountEl.textContent = touches.length;
 
-    const result = findBestPuckMatch(touches);
-    const match = result.match;
-    const usedIds = new Set();
+    const result = findAllPuckMatches(touches);
+    const rawMatches = result.matches;
 
-    if (match) {
-      for (const p of match.points) usedIds.add(p.id);
-
-      const els = ensurePuckElements();
-      showPuckElements(true);
-
+    // Compute centroid/angle for every match found this frame
+    const detections = rawMatches.map(match => {
       const { baseA, baseB, apex } = match;
       const centroidX = (match.points[0].x + match.points[1].x + match.points[2].x) / 3;
       const centroidY = (match.points[0].y + match.points[1].y + match.points[2].y) / 3;
+      const baseMidX = (baseA.x + baseB.x) / 2;
+      const baseMidY = (baseA.y + baseB.y) / 2;
+      const angleRad = Math.atan2(apex.y - baseMidY, apex.x - baseMidX);
+      return { match, baseA, baseB, apex, centroidX, centroidY, angleRad };
+    });
+
+    // --- Associate detections with existing tracked pucks by nearest centroid ---
+    const thresholdPx = associationThresholdMm() * pxPerMm;
+    const claimedDetectionIdx = new Set();
+    const claimedTrackIds = new Set();
+    const assignments = []; // { id, detection }
+
+    for (const [id, prev] of trackedPucks) {
+      let bestIdx = -1;
+      let bestDist = Infinity;
+      detections.forEach((d, idx) => {
+        if (claimedDetectionIdx.has(idx)) return;
+        const dpx = Math.hypot(d.centroidX - prev.centroidX, d.centroidY - prev.centroidY);
+        if (dpx < bestDist) { bestDist = dpx; bestIdx = idx; }
+      });
+      if (bestIdx !== -1 && bestDist <= thresholdPx) {
+        claimedDetectionIdx.add(bestIdx);
+        claimedTrackIds.add(id);
+        assignments.push({ id, detection: detections[bestIdx] });
+      }
+    }
+
+    // Any detection not claimed by an existing tracked puck becomes a new one
+    detections.forEach((d, idx) => {
+      if (claimedDetectionIdx.has(idx)) return;
+      const id = nextPuckId++;
+      assignments.push({ id, detection: d });
+    });
+
+    // Remove tracked pucks not seen this frame
+    for (const id of Array.from(trackedPucks.keys())) {
+      if (!claimedTrackIds.has(id) && !assignments.some(a => a.id === id)) {
+        trackedPucks.delete(id);
+        removePuckElements(id);
+        removeHaloEl(id);
+      }
+    }
+
+    // --- Render each currently active puck ---
+    const activeIds = new Set();
+    for (const { id, detection } of assignments) {
+      activeIds.add(id);
+      trackedPucks.set(id, {
+        centroidX: detection.centroidX,
+        centroidY: detection.centroidY,
+        angleRad: detection.angleRad,
+      });
+
+      const { baseA, baseB, apex, centroidX, centroidY, angleRad } = detection;
+      const angleDeg = (angleRad * 180 / Math.PI + 360) % 360;
+
+      const els = ensurePuckElements(id);
+      for (const key of ['legLine1', 'legLine2', 'baseLine', 'arrowLine', 'apexDot', 'centroidDot']) {
+        els[key].style.display = '';
+      }
+      els.label.style.display = '';
 
       els.baseLine.setAttribute('x1', baseA.x); els.baseLine.setAttribute('y1', baseA.y);
       els.baseLine.setAttribute('x2', baseB.x); els.baseLine.setAttribute('y2', baseB.y);
@@ -998,17 +1129,10 @@
       els.apexDot.setAttribute('cx', apex.x); els.apexDot.setAttribute('cy', apex.y);
       els.centroidDot.setAttribute('cx', centroidX); els.centroidDot.setAttribute('cy', centroidY);
 
-      const baseMidX = (baseA.x + baseB.x) / 2;
-      const baseMidY = (baseA.y + baseB.y) / 2;
-      const angleRad = Math.atan2(apex.y - baseMidY, apex.x - baseMidX);
-      const angleDeg = (angleRad * 180 / Math.PI + 360) % 360;
-
-      // Arrow starts at the apex (the "top" point of the triangle) and
-      // extends further outward in the same direction, away from the base.
-      const arrowLenPx = 20 * pxPerMm; // ~20mm, scaled to the calibrated screen
+      const arrowLenPx = 20 * pxPerMm;
       const dirX = Math.cos(angleRad);
       const dirY = Math.sin(angleRad);
-      const gapPx = 10; // small gap so the arrow doesn't overlap the apex dot
+      const gapPx = 10;
       els.arrowLine.setAttribute('x1', apex.x + dirX * gapPx);
       els.arrowLine.setAttribute('y1', apex.y + dirY * gapPx);
       els.arrowLine.setAttribute('x2', apex.x + dirX * (gapPx + arrowLenPx));
@@ -1018,30 +1142,43 @@
       els.label.style.left = (centroidX + 16) + 'px';
       els.label.style.top = (centroidY - 46) + 'px';
       els.label.textContent =
-        `PUCK  x:${Math.round(centroidX)} y:${Math.round(centroidY)}  ${angleDeg.toFixed(1)}°`;
-
-      puckStatusEl.textContent = `detected (${angleDeg.toFixed(1)}°)`;
-      puckStatusEl.className = 'status detected';
-      debugEl.textContent = '';
-
-      lastPuckFrame = { centroidX, centroidY, angleRad };
-      updateEQ(angleDeg);
+        `PUCK #${id}  x:${Math.round(centroidX)} y:${Math.round(centroidY)}  ${angleDeg.toFixed(1)}°`;
 
       if (haloEnabled) {
-        const h = ensureHaloEl();
+        const h = ensureHaloEl(id);
         applyHaloSize(h);
         h.style.display = '';
         const c = computeHaloCenter(centroidX, centroidY, angleRad);
         h.style.left = c.x + 'px';
         h.style.top = c.y + 'px';
+      } else {
+        removeHaloEl(id);
       }
+    }
+
+    // --- HUD status + EQ meter (driven by the lowest-id active puck) ---
+    if (activeIds.size > 0) {
+      const sortedIds = Array.from(activeIds).sort((a, b) => a - b);
+      const summary = sortedIds.map(id => {
+        const p = trackedPucks.get(id);
+        const deg = ((p.angleRad * 180 / Math.PI) + 360) % 360;
+        return `#${id}: ${deg.toFixed(0)}°`;
+      }).join('  ');
+      puckStatusEl.textContent = `${activeIds.size} detected (${summary})`;
+      puckStatusEl.className = 'status detected';
+      debugEl.textContent = '';
+      updatePuckDots(activeIds.size);
+
+      const firstId = sortedIds[0];
+      const firstPuck = trackedPucks.get(firstId);
+      const firstAngleDeg = ((firstPuck.angleRad * 180 / Math.PI) + 360) % 360;
+      lastPuckFrame = { centroidX: firstPuck.centroidX, centroidY: firstPuck.centroidY, angleRad: firstPuck.angleRad };
+      updateEQ(firstAngleDeg);
     } else {
-      showPuckElements(false);
       puckStatusEl.textContent = 'not detected';
       puckStatusEl.className = 'status none';
       updateEQ(null);
-
-      if (haloEl) haloEl.style.display = 'none';
+      updatePuckDots(0);
 
       if (result.closest) {
         const [s1, s2, s3] = result.closest.sortedLens.map(v => v.toFixed(1));
